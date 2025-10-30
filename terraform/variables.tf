@@ -38,28 +38,6 @@ variable "iam_bindings" {
   default     = {}
 }
 
-variable "shared_vpc_host_project_id" {
-  description = "OPCIONAL: Si se define, el proyecto se adjuntará a este proyecto anfitrión de Shared VPC."
-  type        = string
-  default     = null
-}
-
-variable "shared_vpc_subnets_to_attach" {
-  description = "OPCIONAL: Una lista de las subredes (en formato 'regions/region/subnetworks/name') a las que se dará acceso."
-  type        = list(string)
-  default     = []
-}
-
-variable "enable_monitoring" {
-  description = "Si se establece como 'false' el proyecto no sera monitoreado. Por defecto si lo será"
-  type        = bool
-  default     = true
-}
-
-variable "shared_vpc_iam" {
-  type = string
-}
-
 variable "enable_cicd_bootstrap" {
   description = "Si es true, crea el bucket de backend y la configuración de Workload Identity para CI/CD."
   type        = bool
