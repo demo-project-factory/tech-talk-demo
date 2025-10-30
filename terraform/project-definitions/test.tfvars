@@ -1,4 +1,4 @@
-project_name = "test-e2e"
+project_name = "test-e2e-demo"
 folder_id    = "folders/766069960998"
 
 
