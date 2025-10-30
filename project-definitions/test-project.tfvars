@@ -1,4 +1,4 @@
-project_name = "test-project-2"
+project_name = "test-project-3"
 folder_id    = "folders/766069960998"
 
 project_services = [

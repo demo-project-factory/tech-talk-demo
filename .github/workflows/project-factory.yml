@@ -67,8 +67,12 @@ jobs:
           changed_file="${{ matrix.project_file }}"
           echo "Processing file: $changed_file"
           
+          # Clean the file name to remove quotes and spaces
+          changed_file_cleaned=$(echo "$changed_file" | tr -d ' "')
+          echo "Cleaned file name: $changed_file_cleaned"
+
           # Extraemos el nombre del proyecto del fichero para usarlo como nombre del workspace
-          PROJECT_NAME=$(grep -oP 'project_name\s*=\s*"\K[^"]+' $changed_file)
+          PROJECT_NAME=$(grep -oP 'project_name\s*=\s*"\K[^"]+' "$changed_file_cleaned")
           if [[ -z "$PROJECT_NAME" ]]; then
             echo "Error: No se pudo extraer project_name del fichero .tfvars"
             exit 1
@@ -77,7 +81,7 @@ jobs:
           
           # Usamos GITHUB_OUTPUT para pasar valores a otros steps y jobs
           echo "workspace_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
-          echo "var_file=$changed_file" >> $GITHUB_OUTPUT
+          echo "var_file=$changed_file_cleaned" >> $GITHUB_OUTPUT
 
       - name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
