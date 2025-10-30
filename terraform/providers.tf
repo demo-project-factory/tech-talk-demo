@@ -11,8 +11,3 @@ terraform {
 }
 
 provider "google" {}
-
-provider "google" {
-  alias   = "host"
-  project = var.shared_vpc_host_project_id
-}
