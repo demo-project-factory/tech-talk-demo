@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'terraform/project-definitions/**.tfvars'
+      - 'project-definitions/**.tfvars'
 
 permissions:
   contents: read
@@ -12,14 +12,11 @@ permissions:
   pull-requests: write
 
 jobs:
-  plan-and-request-approval:
-    name: 'Terraform Plan & Request Approval'
+  detect-changes:
+    name: 'Detect New Projects'
     runs-on: ubuntu-latest
     outputs:
-      tf_workspace: ${{ steps.prepare_vars.outputs.workspace_name }}
-      tf_var_file: ${{ steps.prepare_vars.outputs.var_file }}
-      tf_plan_artifact: 'tfplan-${{ steps.prepare_vars.outputs.workspace_name }}'
-      pr_number: ${{ github.event.pull_request.number }}
+      new_projects: ${{ steps.detect_new_projects.outputs.new_projects }}
 
     steps:
       - name: 'Checkout'
@@ -27,16 +24,48 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 'Detect File and Prepare Variables'
+      - name: 'Detect New TFVars Files'
+        id: detect_new_projects
+        run: |
+          echo "Comparing (BASE) ${{ github.event.pull_request.base.sha }} with (HEAD) ${{ github.event.pull_request.head.sha }}"
+          # Detecta solo los ficheros .tfvars que han sido AÑADIDOS en esta PR.
+          new_files=$(git diff --name-only --diff-filter=A ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep 'project-definitions/.*\.tfvars$')
+
+          if [[ -z "$new_files" ]]; then
+            echo "No new .tfvars files found in this PR."
+            echo "new_projects=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Convertimos la lista de ficheros en un JSON array para el output.
+          json_array=$(echo "$new_files" | jq -R . | jq -s .)
+          echo "Detected new project files: $json_array"
+          echo "new_projects=$json_array" >> $GITHUB_OUTPUT
+
+  plan-and-request-approval:
+    name: 'Terraform Plan for ${{ matrix.project_file }}'
+    needs: detect-changes
+    if: needs.detect-changes.outputs.new_projects != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project_file: ${{ fromJson(needs.detect-changes.outputs.new_projects) }}
+
+    outputs:
+      tf_workspace: ${{ steps.prepare_vars.outputs.workspace_name }}
+      tf_var_file: ${{ steps.prepare_vars.outputs.var_file }}
+      tf_plan_artifact: 'tfplan-${{ steps.prepare_vars.outputs.workspace_name }}-${{ github.event.pull_request.number }}'
+      pr_number: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Prepare Variables'
         id: prepare_vars
         run: |
-          echo "Comparando (BASE) ${{ github.event.pull_request.base.sha }} con (HEAD) ${{ github.event.pull_request.head.sha }}"
-          changed_file=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep 'terraform/project-definitions/.*\.tfvars$' | head -n 1)
-
-          if [[ -z "$changed_file" ]]; then
-            echo "Error: No se encontró ningún fichero .tfvars modificado en esta PR."
-            exit 1
-          fi
+          changed_file="${{ matrix.project_file }}"
+          echo "Processing file: $changed_file"
           
           # Extraemos el nombre del proyecto del fichero para usarlo como nombre del workspace
           PROJECT_NAME=$(grep -oP 'project_name\s*=\s*"\K[^"]+' $changed_file)
@@ -44,16 +73,11 @@ jobs:
             echo "Error: No se pudo extraer project_name del fichero .tfvars"
             exit 1
           fi
-          echo "✅ Nombre del proyecto para workspace: $PROJECT_NAME"
-          
-          # Preparamos la ruta relativa del fichero de variables
-          relative_path=$(echo "$changed_file" | sed 's|^terraform/||')
-          echo "✅ Ruta relativa para Terraform: $relative_path"
+          echo "✅ Project name for workspace: $PROJECT_NAME"
           
           # Usamos GITHUB_OUTPUT para pasar valores a otros steps y jobs
           echo "workspace_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
-          echo "var_file=$relative_path" >> $GITHUB_OUTPUT
-          echo "artifact_name=tfplan-$PROJECT_NAME" >> $GITHUB_OUTPUT
+          echo "var_file=$changed_file" >> $GITHUB_OUTPUT
 
       - name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
@@ -68,8 +92,6 @@ jobs:
         run: terraform init -backend-config="bucket=${{ secrets.TFSTATE_BUCKET_NAME }}"
         working-directory: ./terraform
 
-
-      # crear o seleccionar el workspace
       - name: 'Select or Create Terraform Workspace'
         run: terraform workspace select ${{ steps.prepare_vars.outputs.workspace_name }} || terraform workspace new ${{ steps.prepare_vars.outputs.workspace_name }}
         working-directory: ./terraform
@@ -81,28 +103,26 @@ jobs:
       - name: 'Terraform Plan'
         id: plan
         working-directory: ./terraform
-
         run: |
           terraform plan \
-            -var-file="${{ steps.prepare_vars.outputs.var_file }}" \
+            -var-file="../${{ steps.prepare_vars.outputs.var_file }}" \
             -out=tfplan \
             -no-color
         env:
           TF_VAR_billing_account: ${{ secrets.TF_VAR_billing_account }}
-        continue-on-error: true
 
       - name: 'Publish Plan to PR'
         uses: actions/github-script@v7
         with:
           script: |
             const output = `
-            #### Terraform Plan 📖
-            * **Proyecto (Workspace):** \`${{ steps.prepare_vars.outputs.workspace_name }}\`
-            * **Fichero de definición:** \`${{ steps.prepare_vars.outputs.var_file }}\`
+            #### Terraform Plan 📖 for \`${{ steps.prepare_vars.outputs.workspace_name }}\`
+            * **Project (Workspace):** \`${{ steps.prepare_vars.outputs.workspace_name }}\`
+            * **Definition File:** \`${{ steps.prepare_vars.outputs.var_file }}\`
             \`\`\`terraform
             ${{ steps.plan.outputs.stdout }}
             \`\`\`
-            **Acción Requerida:** Un revisor debe [aprobar el despliegue](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) para continuar con el \`apply\`.
+            **Action Required:** A reviewer must [approve the deployment](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) to continue with the \`apply\`.
             `;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -111,22 +131,16 @@ jobs:
               body: output
             })
       
-      - name: 'Exit with error if plan failed'
-        if: steps.plan.outcome == 'failure'
-        run: exit 1
-
       - name: 'Upload Plan Artifact'
         uses: actions/upload-artifact@v4
         with:
-          # El nombre del artefacto ahora es dinámico para evitar colisiones
-          name: ${{ steps.prepare_vars.outputs.artifact_name }}
+          name: 'tfplan-${{ steps.prepare_vars.outputs.workspace_name }}-${{ github.event.pull_request.number }}'
           path: terraform/tfplan
 
   apply-approved-plan:
-    name: 'Terraform Apply'
+    name: 'Terraform Apply for ${{ needs.plan-and-request-approval.outputs.tf_workspace }}'
     runs-on: ubuntu-latest
     needs: plan-and-request-approval
-
     environment: 'project-approval'
     
     defaults:
@@ -149,14 +163,12 @@ jobs:
       - name: 'Terraform Init'
         run: terraform init -backend-config="bucket=${{ secrets.TFSTATE_BUCKET_NAME }}"
       
-      # selecionar el mismo workspace usando la salida del job anterior
       - name: 'Select Workspace'
         run: terraform workspace select ${{ needs.plan-and-request-approval.outputs.tf_workspace }}
       
       - name: 'Download Plan Artifact'
         uses: actions/download-artifact@v4
         with:
-          # descargar el artefacto con el nombre dinámico que nos pasa el job anterior
           name: ${{ needs.plan-and-request-approval.outputs.tf_plan_artifact }}
           path: terraform/
 
@@ -176,13 +188,13 @@ jobs:
           script: |
             const outputs = JSON.parse(process.env.JSON_OUTPUTS);
             
-            let body = '###  Despliegue Completado - Outputs del Proyecto\n\n';
+            let body = `### ✅ Deployment Complete for \`${{ needs.plan-and-request-approval.outputs.tf_workspace }}\`\n\n**Project Outputs:**\n\n`;
             
             if (Object.keys(outputs).length === 0) {
-              body += 'No se generaron outputs.';
+              body += 'No outputs were generated.';
             } else {
-              body += '| Nombre | Valor |\n';
-              body += '|--------|-------|\n';
+              body += '| Name | Value |\n';
+              body += '|---|---|\n';
               
               for (const key in outputs) {
                 const output = outputs[key];

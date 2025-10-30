@@ -38,6 +38,12 @@ variable "iam_bindings" {
   default     = {}
 }
 
+variable "org_policies" {
+  description = "Mapa de políticas de organización para aplicar al proyecto."
+  type        = map(string)
+  default     = {}
+}
+
 variable "enable_cicd_bootstrap" {
   description = "Si es true, crea el bucket de backend y la configuración de Workload Identity para CI/CD."
   type        = bool
