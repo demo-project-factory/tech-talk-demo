@@ -38,7 +38,7 @@ jobs:
           fi
 
           # Convertimos la lista de ficheros en un JSON array para el output.
-          json_array=$(echo "$new_files" | jq -R . | jq -s .)
+          json_array=$(echo "$new_files" | jq -R -s 'split("\n") | map(select(length > 0))')
           echo "Detected new project files: $json_array"
           echo "new_projects=$json_array" >> $GITHUB_OUTPUT
 
