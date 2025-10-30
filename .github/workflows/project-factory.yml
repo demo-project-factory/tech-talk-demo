@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'project-definitions/**.tfvars'
+      - 'terraform/project-definitions/**.tfvars'
 
 permissions:
   contents: read
