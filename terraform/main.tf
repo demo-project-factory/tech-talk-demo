@@ -39,7 +39,7 @@ resource "google_project_organization_policy" "org_policies" {
   dynamic "restore_policy" {
     for_each = [for rule in each.value.rules : rule if rule.deny_all != null]
     content {
-      default = lookup(each.value, "deny_all", "allow_all") == "TRUE" ? "DENY" : "ALLOW"
+      default = true
     }
   }
 }
