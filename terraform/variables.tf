@@ -63,7 +63,7 @@ variable "github_owner" {
   default     = "" # dejar vacío si no se activa el bootstrap
 }
 
-variable "github_owner" {
+variable "github_repo" {
   description = "El nombre del repositorio en GitHub que gestionará el proyecto."
   type        = string
   default     = "" # dejar vacío si no se activa el bootstrap
