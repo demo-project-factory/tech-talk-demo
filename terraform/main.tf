@@ -13,3 +13,34 @@ module "project_factory" {
 
 }
 
+
+resource "google_project_organization_policy" "org_policies" {
+  for_each = var.org_policies
+
+  project    = module.project_factory.project_id
+  constraint = each.key
+
+  dynamic "list_policy" {
+    for_each = [for rule in each.value.rules : rule if rule.values != null]
+    content {
+      allow {
+        values = list_policy.value.values
+      }
+    }
+  }
+
+  dynamic "boolean_policy" {
+    for_each = [for rule in each.value.rules : rule if rule.enforce != null]
+    content {
+      enforced = boolean_policy.value.enforce
+    }
+  }
+
+  dynamic "restore_policy" {
+    for_each = [for rule in each.value.rules : rule if rule.deny_all != null]
+    content {
+      default = lookup(each.value, "deny_all", "allow_all") == "TRUE" ? "DENY" : "ALLOW"
+    }
+  }
+}
+
